@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 # --- 1. IMPORT SERVICE BMKG ---
 from bmkg_service import fetch_bmkg_forecast
+from tide_service import calculate_tide_harmonic
 
 app = FastAPI(
     title="KALTIDE Intelligence API",
@@ -130,10 +131,13 @@ def get_forecast(
         return matched
     return forecasts
 
-@app.get("/api/v1/tide", response_model=List[TideData], tags=["Tide Engine"])
-def get_tide_predictions(
-    station: Optional[str] = Query("PUPR-TIDE-01", description="Station ID dari PUSHIDROSAL / Tide Gauge")
-):
+# Memanggil model hidrodinamika sederhana kita
+    tide_data = calculate_tide_harmonic(station_id=station, hours_ahead=hours)
+    
+    if not tide_data:
+        raise HTTPException(status_code=500, detail="Gagal menghitung pemodelan pasang surut.")
+        
+    return tide_data
     """Menampilkan data pasang surut air laut real-time dan prediksi harian."""
     now = datetime.now()
     return [
