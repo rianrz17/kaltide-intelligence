@@ -8,17 +8,15 @@ def fetch_bmkg_forecast(city_name="Balikpapan"):
     """
     url = "https://data.bmkg.go.id/DataMKG/MEWS/DigitalForecast/DigitalForecast-KalimantanTimur.xml"
     
-    # Menambahkan identitas (User-Agent) agar server BMKG mengira ini adalah browser manusia
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36"
     }
     
     try:
-        # Menambahkan timeout agar tidak menggantung jika server BMKG lambat
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status() 
         
-        # Parsing XML yang aman (ditangkap jika formatnya rusak)
+        # Parsing XML yang aman
         root = ET.fromstring(response.content)
         
     except requests.exceptions.RequestException as e:
@@ -28,7 +26,6 @@ def fetch_bmkg_forecast(city_name="Balikpapan"):
         print(f"Error Parsing XML (Data dari BMKG rusak/HTML): {e}")
         return []
 
-    # Kamus Kode Cuaca BMKG
     weather_codes = {
         "0": "Cerah", "1": "Cerah Berawan", "2": "Cerah Berawan",
         "3": "Berawan", "4": "Tebal Berawan", "5": "Udara Kabur",
@@ -39,14 +36,12 @@ def fetch_bmkg_forecast(city_name="Balikpapan"):
 
     forecast_data = []
 
-    # Mencari area yang sesuai dengan input
     for area in root.findall(".//area"):
         if area.get("description") == city_name:
             weather_param = area.find(".//parameter[@id='weather']")
             wind_speed_param = area.find(".//parameter[@id='ws']")
 
             if weather_param is not None and wind_speed_param is not None:
-                # Mengambil 4 data pertama
                 for i in range(4):
                     time_element = weather_param[i]
                     datetime_str = time_element.get("datetime")
