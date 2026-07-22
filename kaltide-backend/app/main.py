@@ -1,9 +1,9 @@
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 
-# --- 1. IMPORT SERVICE BMKG ---
+# --- 1. IMPORT SERVICES ---
 from bmkg_service import fetch_bmkg_forecast
 from tide_service import calculate_tide_harmonic
 
@@ -13,67 +13,19 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# --- 2. UPDATE MODEL FORECAST ---
+# --- 2. PYDANTIC MODELS (Format Data) ---
 class ForecastData(BaseModel):
     region: str
     datetime: str
-    weather_condition: str  # Ditambahkan untuk mencatat cuaca (Hujan, Cerah, dll)
+    weather_condition: str  
     wind_speed_knot: float
-    tide_max_m: float       # Masih data statis sampai kita integrasikan layanan pasang surut
-
-# (Model Pydantic lainnya seperti TideData, FloodPrediction biarkan sama seperti sebelumnya)
-
-# ... [Kode model Pydantic lainnya disembunyikan agar fokus] ...
-
-# --- 3. UPDATE ENDPOINT FORECAST ---
-@app.get("/api/v1/forecast", response_model=List[ForecastData], tags=["Forecast Engine"])
-def get_forecast(
-    region: str = Query("Balikpapan", description="Nama kota di Kaltim (contoh: Balikpapan, Penajam, Tenggarong)")
-):
-    """Menghasilkan prakiraan cuaca riil dari BMKG dan estimasi pasang surut (mock)."""
-    
-    # Memanggil fungsi yang mengambil data XML dari BMKG
-    bmkg_data = fetch_bmkg_forecast(city_name=region)
-    
-    # Jika data tidak ditemukan (misal salah ketik nama kota atau server BMKG down)
-    if not bmkg_data:
-        raise HTTPException(status_code=404, detail=f"Data cuaca untuk region '{region}' tidak ditemukan di BMKG.")
-
-    forecasts = []
-    for i, data in enumerate(bmkg_data):
-        # Mengubah format waktu BMKG (YYYYMMDDHHMM) menjadi format yang rapi (YYYY-MM-DD HH:MM)
-        raw_dt = data["datetime"]
-        formatted_dt = f"{raw_dt[:4]}-{raw_dt[4:6]}-{raw_dt[6:8]} {raw_dt[8:10]}:{raw_dt[10:12]}"
-
-        forecasts.append(
-            ForecastData(
-                region=region,
-                datetime=formatted_dt,
-                weather_condition=data["weather_condition"],
-                wind_speed_knot=data["wind_speed_knot"],
-                tide_max_m=2.5 + (i * 0.1) # Ini masih data mock, nanti kita ganti di integrasi Tide
-            )
-        )
-        
-    return forecasts
-
-# ... [Endpoint lainnya seperti /tide, /flood, biarkan sama seperti sebelumnya] ...
-
-# --- Pydantic Models ---
+    tide_max_m: float       
 
 class TideData(BaseModel):
     station_id: str
-    station_name: str
-    timestamp: datetime
+    timestamp: str  # Menggunakan str karena format dari service sudah diformat ("YYYY-MM-DD HH:MM:SS")
     water_level_m: float
     status: str
-
-class ForecastData(BaseModel):
-    region: str
-    date: str
-    rainfall_mm: float
-    wind_speed_knot: float
-    tide_max_m: float
 
 class FloodPrediction(BaseModel):
     region_id: str
@@ -83,7 +35,7 @@ class FloodPrediction(BaseModel):
     peak_time: str
     duration_hours: float
     risk_level: str
-    geometry_polygon: dict  # GeoJSON format placeholder
+    geometry_polygon: dict  
 
 class ImpactAnalysis(BaseModel):
     region_name: str
@@ -93,16 +45,16 @@ class ImpactAnalysis(BaseModel):
     ports_affected: int
     residential_houses_affected: int
 
-# --- Mock Database / Service Layer (Placeholder for PostGIS integration) ---
 
+# --- 3. MOCK DATABASE (Wilayah MVP) ---
 REGIONS = {
     "kukar_anggana": {"name": "Kecamatan Anggana, Kukar", "base_elevation_m": 0.5},
     "ppu_sepaku": {"name": "Kecamatan Sepaku (IKN), PPU", "base_elevation_m": 0.8},
     "balikpapan_barat": {"name": "Balikpapan Barat, Balikpapan", "base_elevation_m": 0.6}
 }
 
-# --- API Endpoints ---
 
+# --- 4. API ENDPOINTS ---
 @app.get("/", tags=["System"])
 def root():
     return {
@@ -114,41 +66,42 @@ def root():
 
 @app.get("/api/v1/forecast", response_model=List[ForecastData], tags=["Forecast Engine"])
 def get_forecast(
-    region: Optional[str] = Query(None, description="Filter by region key (e.g., kukar_anggana)")
+    region: str = Query("Balikpapan", description="Nama kota di Kaltim (contoh: Balikpapan, Penajam, Tenggarong)")
 ):
-    """Menghasilkan prakiraan parameter meteorologi dan pasang surut 1-7 hari."""
-    forecasts = [
-        ForecastData(
-            region="Kecamatan Anggana, Kukar",
-            date=(datetime.now() + timedelta(days=i)).strftime("%Y-%m-%d"),
-            rainfall_mm=25.5 + (i * 2.1),
-            wind_speed_knot=12.0,
-            tide_max_m=2.8 + (i * 0.1)
-        ) for i in range(3)
-    ]
-    if region:
-        matched = [f for f in forecasts if region.lower() in f.region.lower()]
-        return matched
+    """Menghasilkan prakiraan cuaca riil dari BMKG dan estimasi pasang surut."""
+    bmkg_data = fetch_bmkg_forecast(city_name=region)
+    
+    if not bmkg_data:
+        raise HTTPException(status_code=404, detail=f"Data cuaca untuk region '{region}' tidak ditemukan di BMKG.")
+
+    forecasts = []
+    for i, data in enumerate(bmkg_data):
+        raw_dt = data["datetime"]
+        formatted_dt = f"{raw_dt[:4]}-{raw_dt[4:6]}-{raw_dt[6:8]} {raw_dt[8:10]}:{raw_dt[10:12]}"
+
+        forecasts.append(
+            ForecastData(
+                region=region,
+                datetime=formatted_dt,
+                weather_condition=data["weather_condition"],
+                wind_speed_knot=data["wind_speed_knot"],
+                tide_max_m=2.5 + (i * 0.1) 
+            )
+        )
     return forecasts
 
-# Memanggil model hidrodinamika sederhana kita
+@app.get("/api/v1/tide", response_model=List[TideData], tags=["Tide Engine"])
+def get_tide_predictions(
+    station: str = Query("PUPR-TIDE-01", description="Station ID dari PUSHIDROSAL / Tide Gauge"),
+    hours: int = Query(24, description="Jumlah jam prediksi ke depan")
+):
+    """Menghasilkan prediksi pasang surut menggunakan Pemodelan Harmonik Oseanografi."""
     tide_data = calculate_tide_harmonic(station_id=station, hours_ahead=hours)
     
     if not tide_data:
         raise HTTPException(status_code=500, detail="Gagal menghitung pemodelan pasang surut.")
         
     return tide_data
-    """Menampilkan data pasang surut air laut real-time dan prediksi harian."""
-    now = datetime.now()
-    return [
-        TideData(
-            station_id=station,
-            station_name="Stasiun Pasang Surut Teluk Balikpapan",
-            timestamp=now,
-            water_level_m=2.65,
-            status="Pasang Tinggi (High Tide)"
-        )
-    ]
 
 @app.get("/api/v1/flood", response_model=List[FloodPrediction], tags=["Flood Simulation Engine"])
 def get_flood_prediction(
@@ -160,7 +113,6 @@ def get_flood_prediction(
     
     reg = REGIONS[region_id]
     
-    # Logika rule-based sederhana untuk MVP (Elevasi DEM vs Pasang + Hujan)
     simulated_height = 45.0  # cm
     risk = "Siaga" if simulated_height > 40 else "Waspada"
 
