@@ -3,11 +3,60 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timedelta
 
+# --- 1. IMPORT SERVICE BMKG ---
+from bmkg_service import fetch_bmkg_forecast
+
 app = FastAPI(
     title="KALTIDE Intelligence API",
     description="Backend API for Kalimantan Tidal Flood Intelligence System (MVP: Balikpapan, PPU, Kukar)",
     version="1.0.0"
 )
+
+# --- 2. UPDATE MODEL FORECAST ---
+class ForecastData(BaseModel):
+    region: str
+    datetime: str
+    weather_condition: str  # Ditambahkan untuk mencatat cuaca (Hujan, Cerah, dll)
+    wind_speed_knot: float
+    tide_max_m: float       # Masih data statis sampai kita integrasikan layanan pasang surut
+
+# (Model Pydantic lainnya seperti TideData, FloodPrediction biarkan sama seperti sebelumnya)
+
+# ... [Kode model Pydantic lainnya disembunyikan agar fokus] ...
+
+# --- 3. UPDATE ENDPOINT FORECAST ---
+@app.get("/api/v1/forecast", response_model=List[ForecastData], tags=["Forecast Engine"])
+def get_forecast(
+    region: str = Query("Balikpapan", description="Nama kota di Kaltim (contoh: Balikpapan, Penajam, Tenggarong)")
+):
+    """Menghasilkan prakiraan cuaca riil dari BMKG dan estimasi pasang surut (mock)."""
+    
+    # Memanggil fungsi yang mengambil data XML dari BMKG
+    bmkg_data = fetch_bmkg_forecast(city_name=region)
+    
+    # Jika data tidak ditemukan (misal salah ketik nama kota atau server BMKG down)
+    if not bmkg_data:
+        raise HTTPException(status_code=404, detail=f"Data cuaca untuk region '{region}' tidak ditemukan di BMKG.")
+
+    forecasts = []
+    for i, data in enumerate(bmkg_data):
+        # Mengubah format waktu BMKG (YYYYMMDDHHMM) menjadi format yang rapi (YYYY-MM-DD HH:MM)
+        raw_dt = data["datetime"]
+        formatted_dt = f"{raw_dt[:4]}-{raw_dt[4:6]}-{raw_dt[6:8]} {raw_dt[8:10]}:{raw_dt[10:12]}"
+
+        forecasts.append(
+            ForecastData(
+                region=region,
+                datetime=formatted_dt,
+                weather_condition=data["weather_condition"],
+                wind_speed_knot=data["wind_speed_knot"],
+                tide_max_m=2.5 + (i * 0.1) # Ini masih data mock, nanti kita ganti di integrasi Tide
+            )
+        )
+        
+    return forecasts
+
+# ... [Endpoint lainnya seperti /tide, /flood, biarkan sama seperti sebelumnya] ...
 
 # --- Pydantic Models ---
 
