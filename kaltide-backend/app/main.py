@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List
 from datetime import datetime
 
 # --- 1. IMPORT SERVICES ---
@@ -23,7 +23,7 @@ class ForecastData(BaseModel):
 
 class TideData(BaseModel):
     station_id: str
-    timestamp: str  # Menggunakan str karena format dari service sudah diformat ("YYYY-MM-DD HH:MM:SS")
+    timestamp: str
     water_level_m: float
     status: str
 
@@ -45,14 +45,12 @@ class ImpactAnalysis(BaseModel):
     ports_affected: int
     residential_houses_affected: int
 
-
 # --- 3. MOCK DATABASE (Wilayah MVP) ---
 REGIONS = {
     "kukar_anggana": {"name": "Kecamatan Anggana, Kukar", "base_elevation_m": 0.5},
     "ppu_sepaku": {"name": "Kecamatan Sepaku (IKN), PPU", "base_elevation_m": 0.8},
     "balikpapan_barat": {"name": "Balikpapan Barat, Balikpapan", "base_elevation_m": 0.6}
 }
-
 
 # --- 4. API ENDPOINTS ---
 @app.get("/", tags=["System"])
@@ -68,7 +66,7 @@ def root():
 def get_forecast(
     region: str = Query("Balikpapan", description="Nama kota di Kaltim (contoh: Balikpapan, Penajam, Tenggarong)")
 ):
-    """Menghasilkan prakiraan cuaca riil dari BMKG dan estimasi pasang surut."""
+    """Menghasilkan prakiraan cuaca riil dari BMKG."""
     bmkg_data = fetch_bmkg_forecast(city_name=region)
     
     if not bmkg_data:
