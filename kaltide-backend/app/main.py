@@ -60,7 +60,7 @@ def get_forecast(
 
 # --- Pydantic Models ---
 
-class TideData(item=BaseModel):
+class TideData(BaseModel):
     station_id: str
     station_name: str
     timestamp: datetime
