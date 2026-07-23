@@ -14,14 +14,20 @@
 - [x] Struktur repo & skeleton backend (FastAPI)
 - [x] Skema database PostgreSQL + PostGIS
 - [x] Forecast Engine (data dummy, siap disambungkan ke API BMKG asli)
+- [x] **Tide Harmonic Engine** — model pasang surut berbasis superposisi konstituen (M2, S2, K1, O1, dst), menggantikan simulasi sinus sederhana. Amplitudo & fase masih **placeholder**, siap dikalibrasi via `scripts/analisis_harmonik_pasang.py` begitu ada data observasi nyata (lihat `docs/PEMODELAN_PASANG_SURUT.md`)
 - [x] Flood Simulation Engine (Rule-Based + GIS, Tahap 1)
 - [x] Intelligence Engine (narasi & analisis dampak dasar)
 - [x] Endpoint REST dasar: forecast, tide, flood, warning, impact, stations, analytics
+- [x] Seed data referensi wilayah & stasiun MVP (`database/seed_mvp.sql`) — **placeholder, perlu verifikasi**
+- [ ] **Verifikasi & ganti koordinat placeholder di `seed_mvp.sql` dengan data resmi BMKG/PUSHIDROSAL**
+- [ ] **Kumpulkan data observasi pasang surut per stasiun (min. 15-29 hari, per-jam)** untuk kalibrasi Tide Harmonic Engine
 - [ ] Integrasi nyata ke API BMKG (ganti placeholder di `klien_bmkg.py`)
 - [ ] Integrasi nyata ke sumber data pasang surut (PUSHIDROSAL/tide gauge)
 - [ ] Ingest data DEMNAS, landuse, sungai, jalan, desa (PostGIS)
 - [ ] Dashboard React + Leaflet (peta interaktif, time slider, layer toggle)
-- [ ] Analisis dampak berbasis query spasial nyata (irisan polygon genangan vs infrastruktur)
+- [x] **Analisis dampak berbasis query spasial PostGIS** (`IntelligenceEngine.hitung_dampak_spasial`) — endpoint `/impact` sudah tersambung ke database, TAPI hasilnya 0 sampai tabel `infrastructure`/`roads` diisi data nyata
+- [ ] **Isi data infrastruktur nyata** (sekolah/puskesmas/pelabuhan/jalan) lewat Overpass Turbo — lihat `docs/SUMBER_DATA_INFRASTRUKTUR.md`, lalu jalankan `scripts/muat_data_osm.py`
+- [ ] Analisis dampak berbasis query spasial nyata (irisan polygon genangan vs infrastruktur) — saat ini masih pakai buffer radius sederhana sambil menunggu polygon genangan Tahap 2
 - [ ] Sistem notifikasi (WhatsApp Gateway, Telegram Bot, Email, Web Push)
 - [ ] Model hidrodinamika sederhana (Tahap 2)
 - [ ] Model Machine Learning koreksi (Tahap 3): Random Forest, XGBoost, LSTM
