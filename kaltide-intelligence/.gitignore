@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.log
+
+# Environment
+.env
+.env.local
+
+# Node / Frontend
+node_modules/
+frontend/dist/
+frontend/build/
+.npm/
+
+# Data (data mentah/olahan biasanya besar, jangan di-commit langsung)
+data/raw/*
+data/processed/*
+data/dem/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/dem/.gitkeep
+
+# Database
+*.sqlite3
+*.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.pid

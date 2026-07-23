@@ -1,0 +1,33 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "backend/**"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "backend/**"
+
+jobs:
+  lint-and-import-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependensi
+        run: pip install -r requirements.txt
+
+      - name: Cek aplikasi bisa diimpor tanpa error
+        run: python -c "from app.main import app; print('OK: app berhasil dimuat')"
