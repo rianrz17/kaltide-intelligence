@@ -1,13 +1,16 @@
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer } from "react-leaflet";
 import RingkasanStatus from "./components/RingkasanStatus.jsx";
+import GenanganLayer from "./components/GenanganLayer.jsx";
 
-// Titik tengah peta: sekitar wilayah MVP (Balikpapan-PPU-Kukar)
-const PUSAT_PETA = [-0.9, 117.0];
+// Titik tengah peta: dipilih agar mencakup seluruh 6 wilayah
+// (Balikpapan, PPU, Kukar/Anggana, Samarinda, Bontang, Berau)
+const PUSAT_PETA = [0.2, 117.2];
 
 /**
  * Komponen utama dashboard KALTIDE Intelligence.
- * Tahap 1: menampilkan peta dasar + kartu ringkasan status rob.
- * Layer DEM, genangan, dan time slider akan ditambahkan pada tahap berikutnya.
+ * Menampilkan peta dasar + kartu ringkasan status + layer genangan
+ * berwarna (hijau/kuning/oranye/merah) per wilayah, berdasarkan hasil
+ * live dari Flood Simulation Engine.
  */
 function App() {
   return (
@@ -22,20 +25,12 @@ function App() {
       <RingkasanStatus />
 
       <div style={{ flex: 1 }}>
-        <MapContainer center={PUSAT_PETA} zoom={9} style={{ height: "100%", width: "100%" }}>
+        <MapContainer center={PUSAT_PETA} zoom={7} style={{ height: "100%", width: "100%" }}>
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          <Marker position={[-1.267, 116.831]}>
-            <Popup>Balikpapan</Popup>
-          </Marker>
-          <Marker position={[-1.246, 116.744]}>
-            <Popup>Penajam Paser Utara (IKN)</Popup>
-          </Marker>
-          <Marker position={[-0.478, 117.24]}>
-            <Popup>Anggana, Kutai Kartanegara</Popup>
-          </Marker>
+          <GenanganLayer />
         </MapContainer>
       </div>
     </div>
