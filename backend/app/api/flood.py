@@ -4,11 +4,12 @@ from fastapi import APIRouter, Query
 
 from app.engines.flood_simulation_engine import FloodSimulationEngine
 from app.engines.forecast_engine import ForecastEngine
+from app.services.klien_bmkg import KlienBMKG
 from app.models.skema import GenanganWilayah
 
 router = APIRouter(prefix="/flood", tags=["Flood"])
 
-forecast_engine = ForecastEngine()
+forecast_engine = ForecastEngine(klien_bmkg=KlienBMKG())
 flood_engine = FloodSimulationEngine()
 
 

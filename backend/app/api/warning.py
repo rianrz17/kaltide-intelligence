@@ -6,12 +6,13 @@ from fastapi import APIRouter, Query
 
 from app.engines.flood_simulation_engine import FloodSimulationEngine
 from app.engines.forecast_engine import ForecastEngine
+from app.services.klien_bmkg import KlienBMKG
 from app.engines.intelligence_engine import IntelligenceEngine
 from app.models.skema import PeringatanDini, TingkatRisiko
 
 router = APIRouter(prefix="/warning", tags=["Warning"])
 
-forecast_engine = ForecastEngine()
+forecast_engine = ForecastEngine(klien_bmkg=KlienBMKG())
 flood_engine = FloodSimulationEngine()
 intelligence_engine = IntelligenceEngine()
 
