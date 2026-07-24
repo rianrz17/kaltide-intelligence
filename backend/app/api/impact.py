@@ -22,6 +22,15 @@ def analisis_dampak(
     stasiun_id: str,
     kecamatan: str = Query(..., description="Nama kecamatan, contoh: Anggana"),
     jumlah_hari: int = 3,
+    radius_m: float = Query(
+        5000.0,
+        description=(
+            "Radius buffer (meter) dari titik pusat kecamatan untuk mencari "
+            "infrastruktur terdampak. Default 5000m karena koordinat kecamatan "
+            "di seed_mvp.sql masih placeholder. Perkecil (mis. 500-1000) "
+            "setelah data koordinat & polygon genangan lebih presisi."
+        ),
+    ),
     db: Session = Depends(dapatkan_db),
 ) -> list[DampakInfrastruktur]:
     """
@@ -30,9 +39,10 @@ def analisis_dampak(
     sungguhan terhadap tabel `infrastructure` dan `roads`.
 
     Catatan: hasil akan menunjukkan 0 untuk semua kategori jika tabel
-    `infrastructure`/`roads` belum diisi data nyata untuk kecamatan ini --
-    itu artinya data belum tersedia, bukan berarti "aman". Lihat
-    docs/SUMBER_DATA_INFRASTRUKTUR.md untuk cara mengisi data tersebut.
+    `infrastructure`/`roads` belum diisi data nyata untuk kecamatan ini,
+    ATAU jika `radius_m` terlalu kecil untuk menjangkau infrastruktur
+    terdekat. Lihat docs/SUMBER_DATA_INFRASTRUKTUR.md untuk cara mengisi
+    data tersebut.
     """
     data_pasang = forecast_engine.prakiraan_pasang(stasiun_id, jumlah_hari)
     data_cuaca = forecast_engine.prakiraan_cuaca(stasiun_id, jumlah_hari)
@@ -62,7 +72,9 @@ def analisis_dampak(
 
     hasil: list[DampakInfrastruktur] = []
     for genangan in daftar_genangan:
-        data_dampak = intelligence_engine.hitung_dampak_spasial(db, genangan, village_id)
+        data_dampak = intelligence_engine.hitung_dampak_spasial(
+            db, genangan, village_id, radius_buffer_m=radius_m
+        )
         hasil.append(intelligence_engine.analisis_dampak(genangan, data_dampak))
 
     return hasil

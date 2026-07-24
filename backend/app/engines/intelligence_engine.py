@@ -48,7 +48,7 @@ class IntelligenceEngine:
         db: Session,
         genangan: GenanganWilayah,
         village_id: int,
-        radius_buffer_m: float = 500.0,
+        radius_buffer_m: float = 5000.0,
     ) -> dict:
         """
         Menghitung dampak nyata terhadap infrastruktur memakai query spasial
@@ -57,6 +57,13 @@ class IntelligenceEngine:
         pendekatan sederhana selama polygon genangan aktual dari Flood
         Simulation Engine Tahap 2 belum tersedia) terhadap tabel
         `infrastructure` dan `roads`.
+
+        Default radius diperbesar jadi 5 km (dari awalnya 500 m) karena
+        titik koordinat di `seed_mvp.sql` masih PLACEHOLDER (pusat kecamatan
+        administratif, bukan titik genangan presisi) -- radius kecil sering
+        menghasilkan 0 dampak walau infrastrukturnya sebenarnya dekat.
+        Setelah koordinat desa & polygon genangan asli tersedia, radius ini
+        bisa diperkecil lagi ke nilai yang lebih realistis (mis. 500m-1km).
 
         Membutuhkan tabel `infrastructure` dan `roads` sudah terisi data
         nyata (lihat docs/SUMBER_DATA_INFRASTRUKTUR.md). Jika tabel kosong,
