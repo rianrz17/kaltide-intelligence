@@ -1,60 +1,93 @@
 """
-Klien BMKG
-==========
-Wrapper sederhana untuk mengambil data prakiraan cuaca (NDF - Numerical
-Data Forecast) dari API BMKG.
+Skrip aktivasi KlienBMKG di endpoint ForecastEngine.
+=====================================================
+Jalankan dari root repo (~/Downloads/kaltide-intelligence):
 
-CATATAN: endpoint & format response di bawah ini bersifat contoh/placeholder.
-Sesuaikan `base_url`, path endpoint, dan parsing response dengan dokumentasi
-resmi API BMKG yang digunakan tim (mis. https://data.bmkg.go.id).
+    python aktifkan_klien_bmkg.py
+
+Yang dilakukan skrip ini, untuk masing-masing dari 4 file target:
+  1. Menambahkan `from app.services.klien_bmkg import KlienBMKG`
+     tepat di bawah baris import ForecastEngine (kalau belum ada).
+  2. Mengubah `ForecastEngine()` -> `ForecastEngine(klien_bmkg=KlienBMKG())`
+     HANYA pada baris instantiate (bukan di tempat lain).
+
+Skrip ini TIDAK menyentuh tide.py (sengaja, karena tide.py tidak
+memanggil prakiraan_cuaca() sama sekali -- lihat hasil grep sebelumnya).
+
+Aman dijalankan berkali-kali (idempotent): kalau sudah diubah,
+dijalankan lagi tidak akan mengubah apa-apa lagi.
 """
 
-from datetime import datetime
+import re
+from pathlib import Path
 
-import httpx
+# Path relatif dari root repo ke masing-masing file target
+FILE_TARGET = [
+    Path("backend/app/api/forecast.py"),
+    Path("backend/app/api/flood.py"),
+    Path("backend/app/api/impact.py"),
+    Path("backend/app/api/warning.py"),
+]
 
-from app.core.config import dapatkan_pengaturan
-from app.models.skema import DataCuaca
+IMPORT_KLIEN_BMKG = "from app.services.klien_bmkg import KlienBMKG"
 
-pengaturan = dapatkan_pengaturan()
+# Pola baris import ForecastEngine, contoh:
+#   from app.engines.forecast_engine import ForecastEngine
+POLA_IMPORT_ENGINE = re.compile(
+    r"^(from\s+[\w.]+\s+import\s+ForecastEngine)\s*$", re.MULTILINE
+)
+
+# Pola instantiate, menangkap nama variabel di kiri (engine / forecast_engine / dst)
+# Contoh yang harus cocok:
+#   engine = ForecastEngine()
+#   forecast_engine = ForecastEngine()
+POLA_INSTANTIATE = re.compile(
+    r"^(?P<indent>[ \t]*)(?P<var>\w+)\s*=\s*ForecastEngine\(\)\s*$", re.MULTILINE
+)
 
 
-class KlienBMKG:
-    """Klien HTTP untuk berkomunikasi dengan API BMKG."""
+def proses_file(path: Path) -> None:
+    if not path.exists():
+        print(f"[LEWATI] {path} tidak ditemukan -- cek path relatif dari root repo.")
+        return
 
-    def __init__(self, base_url: str | None = None, api_key: str | None = None) -> None:
-        self.base_url = base_url or pengaturan.bmkg_api_base_url
-        self.api_key = api_key or pengaturan.bmkg_api_key
+    teks_asli = path.read_text(encoding="utf-8")
+    teks = teks_asli
 
-    def ambil_forecast(self, stasiun_id: str, jumlah_hari: int = 3) -> list[DataCuaca]:
-        """
-        Mengambil prakiraan cuaca untuk sebuah stasiun/wilayah.
+    # 1) Tambah import KlienBMKG kalau belum ada
+    if IMPORT_KLIEN_BMKG not in teks:
+        cocok = POLA_IMPORT_ENGINE.search(teks)
+        if cocok:
+            teks = teks[: cocok.end()] + "\n" + IMPORT_KLIEN_BMKG + teks[cocok.end():]
+        else:
+            print(f"[PERINGATAN] {path}: baris 'import ForecastEngine' tidak ditemukan, "
+                  f"import KlienBMKG TIDAK ditambahkan otomatis -- tambahkan manual.")
 
-        TODO: ganti path & parsing sesuai skema resmi API BMKG yang dipakai.
-        """
-        parameter = {"adm4": stasiun_id}
-        header = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
+    # 2) Ubah instantiate ForecastEngine() -> ForecastEngine(klien_bmkg=KlienBMKG())
+    def ganti_instantiate(m: re.Match) -> str:
+        return f"{m.group('indent')}{m.group('var')} = ForecastEngine(klien_bmkg=KlienBMKG())"
 
-        with httpx.Client(timeout=10.0) as klien:
-            respons = klien.get(f"{self.base_url}/publik/prakiraan-cuaca", params=parameter, headers=header)
-            respons.raise_for_status()
-            mentah = respons.json()
+    teks_baru, jumlah = POLA_INSTANTIATE.subn(ganti_instantiate, teks)
 
-        return self._parse_response(stasiun_id, mentah)
+    if jumlah == 0:
+        print(f"[PERINGATAN] {path}: baris 'X = ForecastEngine()' tidak ditemukan -- "
+              f"cek manual, mungkin sudah diubah atau formatnya beda.")
+    else:
+        teks = teks_baru
+        print(f"[OK] {path}: {jumlah} baris instantiate diubah.")
 
-    @staticmethod
-    def _parse_response(stasiun_id: str, mentah: dict) -> list[DataCuaca]:
-        """Mengubah response JSON mentah BMKG menjadi list DataCuaca terstandardisasi."""
-        hasil: list[DataCuaca] = []
-        for entri in mentah.get("data", []):
-            hasil.append(
-                DataCuaca(
-                    stasiun_id=stasiun_id,
-                    waktu=datetime.fromisoformat(entri["local_datetime"]),
-                    curah_hujan_mm=float(entri.get("tp", 0.0)),
-                    kecepatan_angin_ms=entri.get("ws"),
-                    arah_angin_derajat=entri.get("wd_deg"),
-                    tekanan_udara_hpa=entri.get("pressure"),
-                )
-            )
-        return hasil
+    if teks != teks_asli:
+        path.write_text(teks, encoding="utf-8")
+    else:
+        print(f"[TANPA PERUBAHAN] {path}")
+
+
+def main() -> None:
+    print("Mengaktifkan KlienBMKG di endpoint ForecastEngine...\n")
+    for path in FILE_TARGET:
+        proses_file(path)
+    print("\nSelesai. Jalankan `git diff` untuk review perubahan sebelum commit.")
+
+
+if __name__ == "__main__":
+    main()
