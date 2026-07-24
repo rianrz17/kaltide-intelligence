@@ -79,25 +79,26 @@ class IntelligenceEngine:
                     )::geometry AS area
                     FROM villages
                     WHERE id = :village_id
+                ),
+                jalan_dampak AS (
+                    SELECT COALESCE(SUM(ST_Length(r.geom::geography)), 0) / 1000.0 AS jalan_terdampak_km
+                    FROM roads r, area_terdampak a
+                    WHERE ST_Intersects(r.geom, a.area)
+                ),
+                infra_dampak AS (
+                    SELECT
+                        COUNT(*) FILTER (WHERE i.jenis = 'sekolah') AS sekolah_terdampak,
+                        COUNT(*) FILTER (WHERE i.jenis = 'puskesmas') AS puskesmas_terdampak,
+                        COUNT(*) FILTER (WHERE i.jenis = 'pelabuhan') AS pelabuhan_terdampak
+                    FROM infrastructure i, area_terdampak a
+                    WHERE ST_Intersects(i.geom, a.area)
                 )
                 SELECT
-                    COALESCE(SUM(ST_Length(r.geom::geography)) FILTER (
-                        WHERE ST_Intersects(r.geom, (SELECT area FROM area_terdampak))
-                    ), 0) / 1000.0 AS jalan_terdampak_km,
-                    COUNT(*) FILTER (
-                        WHERE i.jenis = 'sekolah'
-                        AND ST_Intersects(i.geom, (SELECT area FROM area_terdampak))
-                    ) AS sekolah_terdampak,
-                    COUNT(*) FILTER (
-                        WHERE i.jenis = 'puskesmas'
-                        AND ST_Intersects(i.geom, (SELECT area FROM area_terdampak))
-                    ) AS puskesmas_terdampak,
-                    COUNT(*) FILTER (
-                        WHERE i.jenis = 'pelabuhan'
-                        AND ST_Intersects(i.geom, (SELECT area FROM area_terdampak))
-                    ) AS pelabuhan_terdampak
-                FROM infrastructure i
-                FULL OUTER JOIN roads r ON true
+                    jalan_dampak.jalan_terdampak_km,
+                    infra_dampak.sekolah_terdampak,
+                    infra_dampak.puskesmas_terdampak,
+                    infra_dampak.pelabuhan_terdampak
+                FROM jalan_dampak, infra_dampak
                 """
             ),
             {"village_id": village_id, "radius": radius_buffer_m},
