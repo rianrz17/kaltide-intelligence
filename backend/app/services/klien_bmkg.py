@@ -35,7 +35,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-import requests
+import httpx
+
+from app.models.skema import DataCuaca
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +134,8 @@ class PrakiraanCuaca:
     tutupan_awan_persen: float
     curah_hujan_mm: float
     kecepatan_angin_kmh: float
-    arah_angin: str
+    arah_angin: str  # bentuk huruf, mis. "S", "SW"
+    arah_angin_derajat: float  # bentuk derajat 0-360, dari field "wd_deg"
     cuaca_deskripsi: str
     cuaca_deskripsi_en: str
     jarak_pandang_m: float
@@ -167,7 +170,7 @@ class KlienBMKG:
 
     def __init__(self, timeout_detik: int = TIMEOUT_DETIK) -> None:
         self.timeout_detik = timeout_detik
-        self._session = requests.Session()
+        self._client = httpx.Client()
 
     def ambil_prakiraan(self, kode_adm4: str) -> HasilPrakiraan:
         """Ambil prakiraan cuaca 3 hari untuk satu desa (adm4).
@@ -181,24 +184,24 @@ class KlienBMKG:
                                   tidak sesuai format yang diharapkan.
         """
         try:
-            respons = self._session.get(
+            respons = self._client.get(
                 BASE_URL,
                 params={"adm4": kode_adm4},
                 timeout=self.timeout_detik,
             )
             respons.raise_for_status()
-        except requests.exceptions.Timeout as exc:
+        except httpx.TimeoutException as exc:
             raise KesalahanKlienBMKG(
                 f"Timeout mengambil data untuk adm4={kode_adm4} "
                 f"setelah {self.timeout_detik} detik"
             ) from exc
-        except requests.exceptions.HTTPError as exc:
+        except httpx.HTTPStatusError as exc:
             raise KesalahanKlienBMKG(
                 f"BMKG mengembalikan status error untuk adm4={kode_adm4}: "
                 f"{exc.response.status_code}. Kemungkinan kode wilayah "
                 f"salah/tidak terdaftar, atau endpoint sedang bermasalah."
             ) from exc
-        except requests.exceptions.RequestException as exc:
+        except httpx.RequestError as exc:
             raise KesalahanKlienBMKG(
                 f"Gagal terhubung ke BMKG untuk adm4={kode_adm4}: {exc}"
             ) from exc
@@ -238,6 +241,66 @@ class KlienBMKG:
                     nama_mvp, info["desa"], kode, exc,
                 )
         return hasil
+
+    def ambil_forecast(self, stasiun_id: str, jumlah_hari: int = 3) -> list[DataCuaca]:
+        """Jembatan yang dipanggil oleh ForecastEngine.prakiraan_cuaca().
+
+        `stasiun_id` di sini adalah NAMA KECAMATAN MVP (key di LOKASI_MVP,
+        mis. "Anggana", "Bontang Utara") — bukan kode adm4 langsung. Method
+        ini yang bertanggung jawab memetakan nama kecamatan -> kode adm4
+        lalu mengonversi hasil mentah BMKG ke skema DataCuaca (Pydantic)
+        yang dipakai di seluruh aplikasi.
+
+        Catatan keterbatasan data:
+        - `tekanan_udara_hpa` selalu None: BMKG publik TIDAK menyediakan
+          data tekanan udara di endpoint prakiraan-cuaca ini.
+        - `kecepatan_angin_ms`: dikonversi dari field "ws" milik BMKG yang
+          diasumsikan bersatuan km/jam (tidak ada dokumentasi resmi yang
+          eksplisit menyebut satuannya — nilai yang teramati, mis. 7-14,
+          jauh lebih masuk akal sebagai km/jam daripada m/s untuk kondisi
+          angin rutin di Kalimantan Timur). TODO: minta tim BMKG konfirmasi
+          via email jika butuh kepastian 100% untuk model fisik Tahap 2/3.
+
+        Raises:
+            KesalahanKlienBMKG: jika stasiun_id tidak dikenali, atau
+                                  request ke BMKG gagal.
+        """
+        if stasiun_id not in LOKASI_MVP:
+            tersedia = ", ".join(LOKASI_MVP.keys())
+            raise KesalahanKlienBMKG(
+                f"stasiun_id={stasiun_id!r} tidak dikenali. "
+                f"Kecamatan MVP yang tersedia: {tersedia}"
+            )
+
+        kode_adm4 = LOKASI_MVP[stasiun_id]["kode_adm4"]
+        hasil = self.ambil_prakiraan(kode_adm4)
+
+        batas_jam = jumlah_hari * 24
+        if batas_jam > 72:
+            logger.warning(
+                "jumlah_hari=%d (%d jam) diminta untuk %s, tapi BMKG cuma "
+                "menyediakan prakiraan 3 hari (72 jam). Mengembalikan "
+                "semua data yang tersedia (%d titik).",
+                jumlah_hari, batas_jam, stasiun_id, len(hasil.prakiraan),
+            )
+
+        sekarang = datetime.now()
+        data_cuaca: list[DataCuaca] = []
+        for titik in hasil.prakiraan:
+            selisih_jam = (titik.datetime_lokal - sekarang).total_seconds() / 3600
+            if selisih_jam > batas_jam:
+                continue
+            data_cuaca.append(
+                DataCuaca(
+                    stasiun_id=stasiun_id,
+                    waktu=titik.datetime_lokal,
+                    curah_hujan_mm=titik.curah_hujan_mm,
+                    kecepatan_angin_ms=round(titik.kecepatan_angin_kmh / 3.6, 2),
+                    arah_angin_derajat=titik.arah_angin_derajat,
+                    tekanan_udara_hpa=None,  # tidak tersedia dari BMKG publik
+                )
+            )
+        return data_cuaca
 
     @staticmethod
     def _urai_respons(kode_adm4: str, data: dict[str, Any]) -> HasilPrakiraan:
@@ -282,6 +345,7 @@ class KlienBMKG:
                         curah_hujan_mm=titik["tp"],
                         kecepatan_angin_kmh=titik["ws"],
                         arah_angin=titik["wd"],
+                        arah_angin_derajat=titik["wd_deg"],
                         cuaca_deskripsi=titik["weather_desc"],
                         cuaca_deskripsi_en=titik["weather_desc_en"],
                         jarak_pandang_m=titik["vs"],
