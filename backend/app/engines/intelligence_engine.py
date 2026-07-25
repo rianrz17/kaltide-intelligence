@@ -49,36 +49,47 @@ class IntelligenceEngine:
         genangan: GenanganWilayah,
         village_id: int,
         radius_buffer_m: float = 5000.0,
+        geom_genangan_wkt: str | None = None,
     ) -> dict:
         """
         Menghitung dampak nyata terhadap infrastruktur memakai query spasial
-        PostGIS, dengan mengiriskan area sekitar desa/kecamatan terdampak
-        (buffer dari titik pusat village, radius `radius_buffer_m` meter --
-        pendekatan sederhana selama polygon genangan aktual dari Flood
-        Simulation Engine Tahap 2 belum tersedia) terhadap tabel
+        PostGIS, dengan mengiriskan area terdampak terhadap tabel
         `infrastructure` dan `roads`.
 
-        Default radius diperbesar jadi 5 km (dari awalnya 500 m) karena
-        titik koordinat di `seed_mvp.sql` masih PLACEHOLDER (pusat kecamatan
-        administratif, bukan titik genangan presisi) -- radius kecil sering
-        menghasilkan 0 dampak walau infrastrukturnya sebenarnya dekat.
-        Setelah koordinat desa & polygon genangan asli tersedia, radius ini
-        bisa diperkecil lagi ke nilai yang lebih realistis (mis. 500m-1km).
+        area_terdampak ditentukan dengan dua cara:
+        - Kalau `geom_genangan_wkt` DIISI (hasil SpatialFloodEngine, Tahap 2):
+          area_terdampak = polygon genangan asli dari flood-fill DEM.
+        - Kalau `geom_genangan_wkt` KOSONG (None, default -- perilaku lama
+          Tahap 1 tidak berubah): area_terdampak = buffer dari titik pusat
+          village, radius `radius_buffer_m` meter. Pendekatan sederhana
+          selama tile DEM untuk wilayah ini belum tersedia di `dem_tiles`.
+
+          Default radius diperbesar jadi 5 km (dari awalnya 500 m) karena
+          titik koordinat di `seed_mvp.sql` masih PLACEHOLDER (pusat kecamatan
+          administratif, bukan titik genangan presisi) -- radius kecil sering
+          menghasilkan 0 dampak walau infrastrukturnya sebenarnya dekat.
 
         Membutuhkan tabel `infrastructure` dan `roads` sudah terisi data
         nyata (lihat docs/SUMBER_DATA_INFRASTRUKTUR.md). Jika tabel kosong,
         hasilnya akan 0 untuk semua kategori -- itu tandanya data belum
         diisi, BUKAN berarti tidak ada dampak.
         """
+        area_terdampak_sql = (
+            "SELECT ST_GeomFromText(:geom_wkt, 4326) AS area"
+            if geom_genangan_wkt
+            else """
+                SELECT ST_Buffer(
+                    ST_Centroid(geom)::geography, :radius
+                )::geometry AS area
+                FROM villages
+                WHERE id = :village_id
+            """
+        )
         hasil = db.execute(
             text(
-                """
+                f"""
                 WITH area_terdampak AS (
-                    SELECT ST_Buffer(
-                        ST_Centroid(geom)::geography, :radius
-                    )::geometry AS area
-                    FROM villages
-                    WHERE id = :village_id
+                    {area_terdampak_sql}
                 ),
                 jalan_dampak AS (
                     SELECT COALESCE(SUM(ST_Length(r.geom::geography)), 0) / 1000.0 AS jalan_terdampak_km
@@ -101,7 +112,7 @@ class IntelligenceEngine:
                 FROM jalan_dampak, infra_dampak
                 """
             ),
-            {"village_id": village_id, "radius": radius_buffer_m},
+            {"village_id": village_id, "radius": radius_buffer_m, "geom_wkt": geom_genangan_wkt},
         ).fetchone()
 
         if hasil is None:
