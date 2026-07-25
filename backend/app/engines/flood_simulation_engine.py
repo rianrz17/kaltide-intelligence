@@ -97,6 +97,7 @@ class FloodSimulationEngine:
                     waktu_puncak=titik_pasang.waktu + timedelta(hours=1),
                     durasi_jam=3.0,
                     tingkat_risiko=risiko,
+                    tinggi_pasang_m=titik_pasang.tinggi_muka_air_m,
                 )
             )
 

@@ -67,6 +67,14 @@ class GenanganWilayah(BaseModel):
     tingkat_risiko: TingkatRisiko
     luas_genangan_ha: float | None = None
     volume_genangan_m3: float | None = None
+    tinggi_pasang_m: float | None = Field(
+        default=None,
+        description=(
+            "Tinggi pasang mentah (meter) yang dipakai menghitung genangan ini. "
+            "Dibutuhkan SpatialFloodEngine (Tahap 2) untuk hitung water level; "
+            "None berarti data lama / sebelum field ini ditambahkan."
+        ),
+    )
 
 
 class DampakInfrastruktur(BaseModel):
