@@ -9,6 +9,7 @@ from app.engines.flood_simulation_engine import FloodSimulationEngine
 from app.engines.forecast_engine import ForecastEngine
 from app.services.klien_bmkg import KlienBMKG
 from app.engines.intelligence_engine import IntelligenceEngine
+from app.engines.spatial_flood_engine import SpatialFloodEngine
 from app.models.skema import DampakInfrastruktur
 
 router = APIRouter(prefix="/impact", tags=["Impact"])
@@ -16,6 +17,7 @@ router = APIRouter(prefix="/impact", tags=["Impact"])
 forecast_engine = ForecastEngine(klien_bmkg=KlienBMKG())
 flood_engine = FloodSimulationEngine()
 intelligence_engine = IntelligenceEngine()
+spatial_flood_engine = SpatialFloodEngine()
 
 
 @router.get("/{stasiun_id}", response_model=list[DampakInfrastruktur])
@@ -71,10 +73,33 @@ def analisis_dampak(
 
     village_id = baris_village.id
 
+    # Cari tile DEM untuk wilayah ini SEKALI di luar loop (tidak berubah per titik waktu).
+    # None kalau dem_tiles masih kosong (DEMNAS belum diunggah) -- itu tanda "belum siap",
+    # BUKAN error, endpoint tetap jalan dengan fallback buffer seperti Tahap 1.
+    dem_path = spatial_flood_engine.cari_tile_dem(db, village_id)
+
     hasil: list[DampakInfrastruktur] = []
     for genangan in daftar_genangan:
+        geom_genangan_wkt: str | None = None
+
+        if dem_path and genangan.tinggi_pasang_m is not None:
+            try:
+                water_level = spatial_flood_engine.hitung_water_level(
+                    tinggi_pasang_m=genangan.tinggi_pasang_m,
+                    curah_hujan_mm=0.0,  # TODO: sambungkan curah hujan per titik waktu, lihat catatan
+                )
+                hasil_spasial = spatial_flood_engine.buat_polygon_genangan(
+                    dem_path, water_level["tinggi_muka_air_m"]
+                )
+                geom_genangan_wkt = hasil_spasial.geom_wkt
+            except Exception:
+                # DEM gagal dibaca (file rusak/hilang/format salah) -- fallback ke
+                # buffer, JANGAN sampai satu tile DEM bermasalah bikin seluruh
+                # endpoint /impact error. Idealnya di-log, bukan silent -- lihat TODO logging.
+                geom_genangan_wkt = None
+
         data_dampak = intelligence_engine.hitung_dampak_spasial(
-            db, genangan, village_id, radius_buffer_m=radius_m
+            db, genangan, village_id, radius_buffer_m=radius_m, geom_genangan_wkt=geom_genangan_wkt
         )
         hasil.append(intelligence_engine.analisis_dampak(genangan, data_dampak))
 
