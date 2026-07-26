@@ -74,6 +74,15 @@ class SpatialFloodEngine:
     def cari_tile_dem(self, db: Session, village_id: int) -> str | None:
         """
         Mencari path file DEM yang bbox-nya beririsan dengan wilayah village.
+
+        Kalau lebih dari satu tile overlap dengan village yang sama (kasus
+        nyata: satu tile besar bisa overlap ke beberapa kecamatan sekaligus,
+        dan beberapa kecamatan di perbatasan grid butuh >1 tile untuk
+        cover penuh -- lihat docs/CATATAN_DEM.md), kita pilih tile dengan
+        LUAS IRISAN TERBESAR terhadap geom village, BUKAN baris pertama
+        yang kebetulan muncul duluan (LIMIT 1 tanpa ORDER BY sebelumnya
+        tidak deterministik dan bisa pilih tile yang cuma nyerempet sedikit).
+
         Mengembalikan None kalau belum ada tile DEM untuk area ini --
         caller HARUS menangani ini (fallback ke buffer), bukan error keras,
         supaya endpoint tetap jalan sebelum semua tile DEMNAS ter-upload.
@@ -85,6 +94,7 @@ class SpatialFloodEngine:
                 FROM dem_tiles dt, villages v
                 WHERE v.id = :village_id
                   AND ST_Intersects(dt.bbox, v.geom)
+                ORDER BY ST_Area(ST_Intersection(dt.bbox, v.geom)) DESC
                 LIMIT 1
                 """
             ),
