@@ -78,6 +78,20 @@ def analisis_dampak(
     # BUKAN error, endpoint tetap jalan dengan fallback buffer seperti Tahap 1.
     dem_path = spatial_flood_engine.cari_tile_dem(db, village_id)
 
+    # Muat raster DEM ke memori SEKALI (bukan di dalam loop) -- optimasi performa.
+    # File DEM bisa ~90MB (tile gabungan), dan sebelumnya dibuka ulang dari disk
+    # untuk SETIAP titik waktu genangan (bisa 6-30x per request). dem_terload
+    # menyimpan array elevasi + seed_mask yang sudah dihitung, dipakai ulang untuk
+    # tiap water_level_m berbeda tanpa baca disk lagi.
+    dem_terload = None
+    if dem_path:
+        try:
+            dem_terload = spatial_flood_engine.muat_dem(dem_path)
+        except Exception:
+            # File rusak/tidak terbaca -- fallback ke buffer, jangan bikin seluruh
+            # endpoint error. TODO: logging, bukan silent.
+            dem_terload = None
+
     # PENTING: tile DEM sering mencakup beberapa kecamatan sekaligus (mosaic gabungan
     # beberapa tile grid). Terbukti empiris polygon flood-fill bisa 13-16x lebih luas
     # dari kecamatan itu sendiri kalau tidak dibatasi -- area dataran rendah/delta
@@ -86,7 +100,7 @@ def analisis_dampak(
     # fallback buffer (radius_m), supaya semantik "area terdampak" konsisten antara
     # mode fallback dan mode DEM asli.
     clip_geom_wkt: str | None = None
-    if dem_path:
+    if dem_terload is not None:
         baris_clip = db.execute(
             text(
                 "SELECT ST_AsText(ST_Buffer(geom::geography, :radius)::geometry) AS wkt "
@@ -100,19 +114,19 @@ def analisis_dampak(
     for genangan in daftar_genangan:
         geom_genangan_wkt: str | None = None
 
-        if dem_path and genangan.tinggi_pasang_m is not None:
+        if dem_terload is not None and genangan.tinggi_pasang_m is not None:
             try:
                 water_level = spatial_flood_engine.hitung_water_level(
                     tinggi_pasang_m=genangan.tinggi_pasang_m,
                     curah_hujan_mm=0.0,  # TODO: sambungkan curah hujan per titik waktu, lihat catatan
                 )
                 hasil_spasial = spatial_flood_engine.buat_polygon_genangan(
-                    dem_path, water_level["tinggi_muka_air_m"], clip_geom_wkt=clip_geom_wkt
+                    dem_terload, water_level["tinggi_muka_air_m"], clip_geom_wkt=clip_geom_wkt
                 )
                 geom_genangan_wkt = hasil_spasial.geom_wkt
             except Exception:
-                # DEM gagal dibaca (file rusak/hilang/format salah) -- fallback ke
-                # buffer, JANGAN sampai satu tile DEM bermasalah bikin seluruh
+                # Flood-fill gagal (mis. geometry tidak valid) -- fallback ke
+                # buffer, JANGAN sampai satu titik waktu bermasalah bikin seluruh
                 # endpoint /impact error. Idealnya di-log, bukan silent -- lihat TODO logging.
                 geom_genangan_wkt = None
 
