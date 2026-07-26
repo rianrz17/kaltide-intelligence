@@ -37,7 +37,15 @@ function GenanganLayer() {
           daftarStasiun.map(async (stasiun) => {
             try {
               const responsGenangan = await axios.get(
-                `${URL_API}/flood/prediksi/${stasiun.id}`,
+                // PENTING: path param di sini HARUS nama kecamatan (mis. "Anggana"),
+                // BUKAN kode stasiun asli (mis. "anggana-01"). Ini bukan salah ketik --
+                // ForecastEngine/KlienBMKG memang didesain menerima nama kecamatan MVP
+                // di parameter yang (membingungkan) dinamai "stasiun_id". Lihat docstring
+                // KlienBMKG.ambil_forecast() di backend/app/services/klien_bmkg.py.
+                // Bug sebelumnya: pakai stasiun.id (kode stasiun) di sini, menyebabkan
+                // SEMUA request gagal divalidasi backend dan silang jatuh ke catch di bawah,
+                // membuat semua marker tampil "aman" padahal datanya sebenarnya siaga/awas.
+                `${URL_API}/flood/prediksi/${stasiun.kecamatan}`,
                 { params: { kecamatan: stasiun.kecamatan, jumlah_hari: 1 } }
               );
 
