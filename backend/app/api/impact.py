@@ -78,6 +78,24 @@ def analisis_dampak(
     # BUKAN error, endpoint tetap jalan dengan fallback buffer seperti Tahap 1.
     dem_path = spatial_flood_engine.cari_tile_dem(db, village_id)
 
+    # PENTING: tile DEM sering mencakup beberapa kecamatan sekaligus (mosaic gabungan
+    # beberapa tile grid). Terbukti empiris polygon flood-fill bisa 13-16x lebih luas
+    # dari kecamatan itu sendiri kalau tidak dibatasi -- area dataran rendah/delta
+    # membuat genangan terhubung menyebar jauh ke kecamatan tetangga. Ambil buffer
+    # WKT di sekitar village SEKALI di luar loop, pakai radius yang sama dengan
+    # fallback buffer (radius_m), supaya semantik "area terdampak" konsisten antara
+    # mode fallback dan mode DEM asli.
+    clip_geom_wkt: str | None = None
+    if dem_path:
+        baris_clip = db.execute(
+            text(
+                "SELECT ST_AsText(ST_Buffer(geom::geography, :radius)::geometry) AS wkt "
+                "FROM villages WHERE id = :village_id"
+            ),
+            {"village_id": village_id, "radius": radius_m},
+        ).fetchone()
+        clip_geom_wkt = baris_clip.wkt if baris_clip else None
+
     hasil: list[DampakInfrastruktur] = []
     for genangan in daftar_genangan:
         geom_genangan_wkt: str | None = None
@@ -89,7 +107,7 @@ def analisis_dampak(
                     curah_hujan_mm=0.0,  # TODO: sambungkan curah hujan per titik waktu, lihat catatan
                 )
                 hasil_spasial = spatial_flood_engine.buat_polygon_genangan(
-                    dem_path, water_level["tinggi_muka_air_m"]
+                    dem_path, water_level["tinggi_muka_air_m"], clip_geom_wkt=clip_geom_wkt
                 )
                 geom_genangan_wkt = hasil_spasial.geom_wkt
             except Exception:

@@ -24,6 +24,7 @@ import numpy as np
 import rasterio
 from rasterio.features import shapes as rio_shapes
 from scipy.ndimage import binary_dilation, generate_binary_structure, label
+from shapely import wkt as shapely_wkt
 from shapely.geometry import shape
 from shapely.ops import unary_union
 from sqlalchemy import text
@@ -107,6 +108,7 @@ class SpatialFloodEngine:
         dem_path: str,
         water_level_m: float,
         seed_mask: np.ndarray | None = None,
+        clip_geom_wkt: str | None = None,
     ) -> HasilGenanganSpasial:
         """
         Flood-fill dengan konektivitas hidrologis dari raster DEM.
@@ -115,6 +117,18 @@ class SpatialFloodEngine:
         sel dengan elevasi <= 0 dianggap laut/muara (seed otomatis).
         Ini kasar -- setelah tabel rivers/coastline dirasterisasi ke grid
         yang sama, seed_mask sebaiknya dibangun dari situ, bukan elevasi 0.
+
+        clip_geom_wkt (PENTING): tile DEM yang dipakai bisa mencakup lebih
+        dari satu kecamatan (satu tile besar/gabungan), dan area dataran
+        rendah (mis. delta Anggana) bisa membuat flood-fill menyebar JAUH
+        melewati batas kecamatan yang sebenarnya diminta -- terbukti empiris
+        polygon bisa 13-16x lebih luas dari kecamatan itu sendiri kalau
+        tidak dipotong. Kalau clip_geom_wkt diisi (biasanya buffer di
+        sekitar village yang diminta), hasil akhir di-ST_Intersection
+        dengan itu SEBELUM dikembalikan -- supaya dampak yang dihitung
+        nanti (jalan/infrastruktur terdampak) tidak salah atribusi ke
+        kecamatan yang diminta padahal sebenarnya genangan itu ada di
+        kecamatan tetangga.
         """
         with rasterio.open(dem_path) as src:
             dem = src.read(1).astype(np.float32)
@@ -148,6 +162,18 @@ class SpatialFloodEngine:
         ]
         gabungan = unary_union(polygons)
 
+        if clip_geom_wkt:
+            batas = shapely_wkt.loads(clip_geom_wkt)
+            gabungan = gabungan.intersection(batas)
+            if gabungan.is_empty:
+                return HasilGenanganSpasial(
+                    geom_wkt=None, luas_ha=0.0, kedalaman_maks_m=0.0,
+                    tinggi_muka_air_m=water_level_m, komponen_pasut_m=0.0, komponen_hujan_m=0.0,
+                )
+
+        # Kedalaman maks dihitung dari SELURUH area tergenang di tile (sebelum clip),
+        # supaya tetap mencerminkan titik terdalam yang mungkin relevan secara fisik.
+        # TODO: idealnya dihitung ulang HANYA di piksel dalam area ter-clip.
         kedalaman = water_level_m - dem[tergenang]
         kedalaman_maks = float(np.nanmax(kedalaman)) if kedalaman.size else 0.0
 
